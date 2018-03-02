@@ -255,7 +255,7 @@ cdef void fuse_symlink (fuse_req_t req, const_char *link, fuse_ino_t parent,
         log.error('fuse_symlink(): fuse_reply_* failed with %s', strerror(-ret))
 
 cdef void fuse_rename (fuse_req_t req, fuse_ino_t parent, const_char *name,
-                       fuse_ino_t newparent, const_char *newname) with gil:
+                       fuse_ino_t newparent, const_char *newname, unsigned int flags) with gil:
     cdef int ret
 
     try:
@@ -478,6 +478,40 @@ cdef void fuse_readdir (fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
 
     if ret != 0:
         log.error('fuse_readdir(): fuse_reply_* failed with %s', strerror(-ret))
+
+cdef void fuse_readdirplus (fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
+                            fuse_file_info *fi) with gil:
+    cdef int ret
+    cdef char *cname
+    cdef char *buf
+    cdef size_t len_, acc_size
+    cdef EntryAttributes entry
+
+    try:
+        acc_size = 0
+        buf = NULL
+        with lock:
+            for (name, attr, next_) in operations.readdirplus(fi.fh, off):
+                entry = <EntryAttributes?> attr
+                if buf == NULL:
+                    buf = <char*> calloc_or_raise(size, sizeof(char))
+                cname = PyBytes_AsString(name)
+                len_ = fuse_add_direntry_plus(req, buf + acc_size, size - acc_size,
+                                              cname, &entry.fuse_param, next_)
+                if len_ > (size - acc_size):
+                    break
+                acc_size += len_
+        ret = fuse_reply_buf(req, buf, acc_size)
+    except FUSEError as e:
+        ret = fuse_reply_err(req, e.errno)
+    except:
+        ret = handle_exc(req)
+    finally:
+        if buf != NULL:
+            stdlib.free(buf)
+
+    if ret != 0:
+        log.error('fuse_readdirplus(): fuse_reply_* failed with %s', strerror(-ret))
 
 cdef void fuse_releasedir (fuse_req_t req, fuse_ino_t ino, fuse_file_info *fi) with gil:
     cdef int ret

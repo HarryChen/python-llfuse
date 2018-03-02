@@ -30,11 +30,8 @@ cdef extern from * nogil: # fuse_common.h should not be included
     struct fuse_session:
         pass
 
-    struct fuse_chan:
-        pass
-
-    fuse_chan *fuse_mount(char *mountpoint, fuse_args *args)
-    void fuse_unmount(char *mountpoint, fuse_chan *ch)
+    int fuse_session_mount(fuse_session *se, char *mountpoint)
+    void fuse_session_unmount(fuse_session *se)
     int fuse_set_signal_handlers(fuse_session *se)
     void fuse_remove_signal_handlers(fuse_session *se)
 

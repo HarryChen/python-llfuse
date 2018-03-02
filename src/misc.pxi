@@ -81,6 +81,7 @@ cdef void init_fuse_ops():
     fuse_ops.fsync = fuse_fsync
     fuse_ops.opendir = fuse_opendir
     fuse_ops.readdir = fuse_readdir
+    fuse_ops.readdirplus = fuse_readdirplus
     fuse_ops.releasedir = fuse_releasedir
     fuse_ops.fsyncdir = fuse_fsyncdir
     fuse_ops.statfs = fuse_statfs
@@ -270,15 +271,15 @@ def _notify_loop():
         if req.kind == NOTIFY_INVAL_INODE:
             if req.attr_only:
                 with nogil:
-                    fuse_lowlevel_notify_inval_inode(channel, req.ino, -1, 0)
+                    fuse_lowlevel_notify_inval_inode(session, req.ino, -1, 0)
             else:
                 with nogil:
-                    fuse_lowlevel_notify_inval_inode(channel, req.ino, 0, 0)
+                    fuse_lowlevel_notify_inval_inode(session, req.ino, 0, 0)
         elif req.kind == NOTIFY_INVAL_ENTRY:
             PyBytes_AsStringAndSize(req.name, &cname, &len_)
             with nogil:
                 # len_ is guaranteed positive
-                fuse_lowlevel_notify_inval_entry(channel, req.ino, cname,
+                fuse_lowlevel_notify_inval_entry(session, req.ino, cname,
                                                  <size_t> len_)
         else:
             raise RuntimeError("Weird request kind received: %d", req.kind)

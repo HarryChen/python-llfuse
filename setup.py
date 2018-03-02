@@ -73,8 +73,8 @@ def main():
     with open(os.path.join(basedir, 'README.rst'), 'r') as fh:
         long_desc = fh.read()
 
-    compile_args = pkg_config('fuse', cflags=True, ldflags=False, min_ver='2.8.0')
-    compile_args += ['-DFUSE_USE_VERSION=29', '-Wall', '-Wextra', '-Wconversion',
+    compile_args = pkg_config('fuse3', cflags=True, ldflags=False, min_ver='3.1.1')
+    compile_args += ['-DFUSE_USE_VERSION=31', '-Wall', '-Wextra', '-Wconversion',
                      '-Wsign-compare', '-DLLFUSE_VERSION="%s"' % LLFUSE_VERSION]
 
     # We may have unused functions if we compile for older FUSE versions
@@ -114,7 +114,7 @@ def main():
     if sys.version_info[0] == 2:
         compile_args.append('-fno-strict-aliasing')
 
-    link_args = pkg_config('fuse', cflags=False, ldflags=True, min_ver='2.8.0')
+    link_args = pkg_config('fuse3', cflags=False, ldflags=True, min_ver='2.8.0')
     link_args.append('-lpthread')
     c_sources = ['src/llfuse.c', 'src/lock.c']
 

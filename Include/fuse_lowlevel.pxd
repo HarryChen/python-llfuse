@@ -73,7 +73,7 @@ cdef extern from "<fuse_lowlevel.h>" nogil:
         void (*symlink) (fuse_req_t req, const_char *link, fuse_ino_t parent,
                          const_char *name)
         void (*rename) (fuse_req_t req, fuse_ino_t parent, const_char *name,
-                        fuse_ino_t newparent, const_char *newname)
+                        fuse_ino_t newparent, const_char *newname, unsigned int flags)
         void (*link) (fuse_req_t req, fuse_ino_t ino, fuse_ino_t newparent,
                       const_char *newname)
         void (*open) (fuse_req_t req, fuse_ino_t ino,
@@ -92,6 +92,8 @@ cdef extern from "<fuse_lowlevel.h>" nogil:
                          fuse_file_info *fi)
         void (*readdir) (fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
                          fuse_file_info *fi)
+        void (*readdirplus) (fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
+                             fuse_file_info *fi)
         void (*releasedir) (fuse_req_t req, fuse_ino_t ino,
                             fuse_file_info *fi)
         void (*fsyncdir) (fuse_req_t req, fuse_ino_t ino, int datasync,
@@ -135,17 +137,20 @@ cdef extern from "<fuse_lowlevel.h>" nogil:
                              const_char *name, struct_stat *stbuf,
                              off_t off)
 
-    int fuse_lowlevel_notify_inval_inode(fuse_chan *ch, fuse_ino_t ino,
+    size_t fuse_add_direntry_plus(fuse_req_t req, const_char *buf, size_t bufsize,
+                             const_char *name, fuse_entry_param *e,
+                             off_t off)
+    int fuse_lowlevel_notify_inval_inode(fuse_session *ch, fuse_ino_t ino,
                                          off_t off, off_t len)
-    int fuse_lowlevel_notify_inval_entry(fuse_chan *ch, fuse_ino_t parent,
+    int fuse_lowlevel_notify_inval_entry(fuse_session *ch, fuse_ino_t parent,
                                          const_char *name, size_t namelen)
-    int fuse_lowlevel_notify_delete(fuse_chan *ch, fuse_ino_t parent,
+    int fuse_lowlevel_notify_delete(fuse_session *se, fuse_ino_t parent,
                                     fuse_ino_t child, const_char *name,
                                     size_t namelen)
-    int fuse_lowlevel_notify_store(fuse_chan *ch, fuse_ino_t ino,
+    int fuse_lowlevel_notify_store(fuse_session *se, fuse_ino_t ino,
                                    off_t offset, fuse_bufvec *bufv,
                                    fuse_buf_copy_flags flags)
-    int fuse_lowlevel_notify_retrieve(fuse_chan *ch, fuse_ino_t ino,
+    int fuse_lowlevel_notify_retrieve(fuse_session *se, fuse_ino_t ino,
                                       size_t size, off_t offset, void *cookie);
 
     void *fuse_req_userdata(fuse_req_t req)
@@ -159,18 +164,12 @@ cdef extern from "<fuse_lowlevel.h>" nogil:
     struct fuse_session_ops:
         pass
 
-    fuse_session *fuse_session_new(fuse_session_ops *op, void *data)
-    void fuse_session_add_chan(fuse_session *se, fuse_chan *ch)
-    int fuse_session_receive_buf(fuse_session *se, fuse_buf *buf,
-                                 fuse_chan **chp)
-    void fuse_session_process_buf(fuse_session *se,
-                                  fuse_buf *buf, fuse_chan *ch)
-    void fuse_session_remove_chan(fuse_chan *ch)
+    fuse_session *fuse_session_new(fuse_args *args, fuse_lowlevel_ops *op, size_t op_size, void *userdata)
+    int fuse_session_receive_buf(fuse_session *se, fuse_buf *buf)
+    void fuse_session_process_buf(fuse_session *se, fuse_buf *buf)
     void fuse_session_reset(fuse_session *se)
     void fuse_session_exit(fuse_session *se)
     void fuse_session_destroy(fuse_session *se)
     int fuse_session_loop(fuse_session *se)
     int fuse_session_loop_mt(fuse_session *se)
-    void fuse_chan_destroy(fuse_chan *ch)
-    size_t fuse_chan_bufsize(fuse_chan *ch)
     int fuse_session_exited(fuse_session *se)

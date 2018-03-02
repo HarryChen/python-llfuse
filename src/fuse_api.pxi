@@ -213,12 +213,7 @@ def getxattr(path, name, size_t size_guess=128, namespace='user'):
 #   active, it's expected to improve performance because we move pages from the
 #   page instead of copying them.
 #
-if os.uname()[0] == 'Darwin':
-    default_options = frozenset(('big_writes', 'default_permissions',
-                                 'no_splice_read', 'splice_write', 'splice_move'))
-else:
-    default_options = frozenset(('big_writes', 'nonempty', 'default_permissions',
-                                 'no_splice_read', 'splice_write', 'splice_move'))
+default_options = frozenset()
 
 def init(ops, mountpoint, options=default_options):
     '''Initialize and mount FUSE file system
@@ -233,7 +228,7 @@ def init(ops, mountpoint, options=default_options):
         my_opts = set(llfuse.default_options)
         my_opts.add('allow_other')
         my_opts.discard('default_permissions')
-        llfuse.init(ops, mountpoint, my_opts)
+        llfuse.init(ops, mountpoint, my_apts)
 
     Valid options are listed under ``struct
     fuse_opt fuse_mount_opts[]``
@@ -252,26 +247,19 @@ def init(ops, mountpoint, options=default_options):
     global fuse_ops
     global mountpoint_b
     global session
-    global channel
 
     mountpoint_b = str2bytes(os.path.abspath(mountpoint))
     operations = ops
 
     make_fuse_args(options, &f_args)
-    log.debug('Calling fuse_mount')
-    channel = fuse_mount(<char*>mountpoint_b, &f_args)
-    if not channel:
-        raise RuntimeError('fuse_mount failed')
-
-    log.debug('Calling fuse_lowlevel_new')
     init_fuse_ops()
-    session = fuse_lowlevel_new(&f_args, &fuse_ops, sizeof(fuse_ops), NULL)
+    if not hasattr(operations, 'readdirplus'):
+        fuse_ops.readdirplus = NULL
+    log.debug('Calling fuse_session_new')
+    session = fuse_session_new(&f_args, &fuse_ops, sizeof(fuse_ops), NULL)
     if not session:
-        fuse_unmount(<char*>mountpoint_b, channel)
-        raise RuntimeError("fuse_lowlevel_new() failed")
-
-    log.debug('Calling fuse_session_add_chan')
-    fuse_session_add_chan(session, channel)
+        raise RuntimeError("fuse_session_new() failed")
+    fuse_session_mount(session, <char*>mountpoint_b)
 
     pthread_mutex_init(&exc_info_mutex, NULL)
 
@@ -356,8 +344,8 @@ cdef session_loop_single():
     cdef void* mem
     cdef size_t size
 
-    size = fuse_chan_bufsize(channel)
-    mem = calloc_or_raise(1, size)
+    size = 0
+    mem = NULL 
     try:
         session_loop(mem, size)
     finally:
@@ -367,17 +355,15 @@ cdef session_loop(void* mem, size_t size):
     '''Process requests'''
 
     cdef int res
-    cdef fuse_chan *ch
     cdef fuse_buf buf
 
     while not fuse_session_exited(session):
-        ch = channel
         buf.mem = mem
         buf.size = size
         buf.pos = 0
         buf.flags = 0
         with nogil:
-            res = fuse_session_receive_buf(session, &buf, &ch)
+            res = fuse_session_receive_buf(session, &buf)
 
         if res == -errno.EINTR:
             continue
@@ -387,7 +373,7 @@ cdef session_loop(void* mem, size_t size):
         elif res == 0:
             break
 
-        fuse_session_process_buf(session, &buf, ch)
+        fuse_session_process_buf(session, &buf)
 
 ctypedef struct worker_data_t:
     sem_t* sem
@@ -434,7 +420,6 @@ cdef session_loop_mt(workers):
     cdef worker_data_t *wd
     cdef sigset_t newset, oldset
     cdef int res, i
-    cdef size_t bufsize
     cdef sem_t sem
 
     if sem_init(&sem, 0, 0) != 0:
@@ -448,14 +433,13 @@ cdef session_loop_mt(workers):
     sigaddset(&newset, signal.SIGQUIT);
 
     PyEval_InitThreads()
-    bufsize = fuse_chan_bufsize(channel)
     wd = <worker_data_t*> calloc_or_raise(workers, sizeof(worker_data_t))
     try:
         for i in range(workers):
             wd[i].sem = &sem
             wd[i].thread_no = i
-            wd[i].bufsize = bufsize
-            wd[i].buf = calloc_or_raise(1, bufsize)
+            wd[i].bufsize = 0 
+            wd[i].buf = NULL 
 
             # Ensure that signals get delivered to main thread
             pthread_sigmask(SIG_BLOCK, &newset, &oldset)
@@ -509,23 +493,17 @@ def close(unmount=True):
 
     global mountpoint_b
     global session
-    global channel
     global exc_info
 
-    log.debug('Calling fuse_session_remove_chan')
-    fuse_session_remove_chan(channel)
+    if unmount:
+        log.debug('Calling fuse_session_unmount')
+        fuse_session_unmount(session)
+
     log.debug('Calling fuse_session_destroy')
     fuse_session_destroy(session)
 
-    if unmount:
-        log.debug('Calling fuse_unmount')
-        fuse_unmount(<char*>mountpoint_b, channel)
-    else:
-        fuse_chan_destroy(channel)
-
     mountpoint_b = None
     session = NULL
-    channel = NULL
 
     # destroy handler may have given us an exception
     if exc_info:
@@ -619,7 +597,7 @@ def notify_store(inode, offset, data):
     ino = inode
     off = offset
     with nogil:
-        ret = fuse_lowlevel_notify_store(channel, ino, off, &bufvec, 0)
+        ret = fuse_lowlevel_notify_store(session, ino, off, &bufvec, 0)
 
     PyBuffer_Release(&pybuf)
     if ret != 0:

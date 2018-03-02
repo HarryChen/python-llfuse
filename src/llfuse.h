@@ -35,10 +35,10 @@ the terms of the GNU LGPL.
 
 #include <fuse.h>
 
-#if FUSE_VERSION < 29
-#error FUSE version too old, 2.9.0 or newer required
+#if FUSE_VERSION < 31
+#error FUSE version too old, 3.1.1 or newer required
 #endif
 
-#if FUSE_MAJOR_VERSION != 2
+#if FUSE_MAJOR_VERSION != 3
 #error This version of the FUSE library is not yet supported.
 #endif
