@@ -1,38 +1,25 @@
-#!/usr/bin/env python3
 '''
 passthroughfs.py - Example file system for Python-LLFUSE
-
 This file system mirrors the contents of a specified directory tree. It requires
 Python 3.3 (since Python 2.x does not support the follow_symlinks parameters for
 os.* functions).
-
 Caveats:
-
  * Inode generation numbers are not passed through but set to zero.
-
  * Block size (st_blksize) and number of allocated blocks (st_blocks) are not
    passed through.
-
  * Performance for large directories is not good, because the directory
    is always read completely.
-
  * There may be a way to break-out of the directory tree.
-
  * The readdir implementation is not fully POSIX compliant. If a directory
    contains hardlinks and is modified during a readdir call, readdir()
    may return some of the hardlinked files twice or omit them completely.
-
  * If you delete or rename files in the underlying file system, the
    passthrough file system will get confused.
-
-Copyright ©  Nikolaus Rath <Nikolaus.org>
-
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
 the Software without restriction, including without limitation the rights to
 use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 the Software, and to permit persons to whom the Software is furnished to do so.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -57,18 +44,20 @@ import errno
 import logging
 import stat as stat_m
 from llfuse import FUSEError
-from os import fsencode, fsdecode
+#from os import fsencode, fsdecode
+fsencode = lambda x: x
+fsdecode = lambda x: x
 from collections import defaultdict
 
-import faulthandler
-faulthandler.enable()
+#import faulthandler
+#faulthandler.enable()
 
 log = logging.getLogger(__name__)
 
 class Operations(llfuse.Operations):
 
     def __init__(self, source):
-        super().__init__()
+        super(Operations, self).__init__()
         self._inode_path_map = { llfuse.ROOT_INODE: source }
         self._lookup_cnt = defaultdict(lambda : 0)
         self._fd_inode_map = dict()
@@ -87,7 +76,7 @@ class Operations(llfuse.Operations):
         return val
 
     def _add_path(self, inode, path):
-        log.debug('_add_path for %d, %s', inode, path)
+        # log.debug('_add_path for %d, %s', inode, path)
         self._lookup_cnt[inode] += 1
 
         # With hardlinks, one inode may map to multiple paths.
@@ -124,6 +113,7 @@ class Operations(llfuse.Operations):
         return attr
 
     def getattr(self, inode, ctx=None):
+        log.debug('getattr for inode %d', inode)
         if inode in self._inode_fd_map:
             return self._getattr(fd=self._inode_fd_map[inode])
         else:
@@ -141,10 +131,16 @@ class Operations(llfuse.Operations):
             raise FUSEError(exc.errno)
 
         entry = llfuse.EntryAttributes()
-        for attr in ('st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
-                     'st_rdev', 'st_size', 'st_atime_ns', 'st_mtime_ns',
-                     'st_ctime_ns'):
-            setattr(entry, attr, getattr(stat, attr))
+        entry.st_ino = stat.st_ino
+        entry.st_mode = stat.st_mode
+        entry.st_nlink = stat.st_nlink
+        entry.st_uid = stat.st_uid
+        entry.st_gid = stat.st_gid
+        entry.st_rdev = stat.st_rdev
+        entry.st_size = stat.st_size
+        entry.st_atime_ns = stat.st_atime * 10e6
+        entry.st_mtime_ns = stat.st_mtime * 10e6
+        entry.st_ctime_ns = stat.st_ctime * 10e6
         entry.generation = 0
         entry.entry_timeout = 5
         entry.attr_timeout = 5
@@ -180,10 +176,16 @@ class Operations(llfuse.Operations):
         # count entries, because then we would skip over entries
         # (or return them more than once) if the number of directory
         # entries changes between two calls to readdir().
+        yield_count = 0
         for (ino, name, attr) in sorted(entries):
             if ino <= off:
                 continue
+            self._add_path(attr.st_ino, os.path.join(path, name))
+            yield_count += 1
+            log.debug('yield %d entries', yield_count)
             yield (fsencode(name), attr, ino)
+
+    readdirplus = readdir
 
     def unlink(self, inode_p, name, ctx):
         name = fsdecode(name)
