@@ -59,7 +59,7 @@ if DEVELOPER_MODE:
 # to work properly
 sys.path.insert(0, os.path.join(basedir, 'src'))
 
-LLFUSE_VERSION = '1.3.2'
+LLFUSE_VERSION = '1.3.2.qnap'
 
 def main():
 
@@ -123,6 +123,7 @@ def main():
     elif os.uname()[0] == 'Darwin':
         c_sources.append('src/darwin_compat.c')
 
+    link_args.append('-Wl,-rpath=$ORIGIN/.libs_fuse3')
     install_requires = []
     if sys.version_info[0] == 2:
         install_requires.append('contextlib2')
@@ -163,10 +164,11 @@ def main():
                 'release': ('setup.py', LLFUSE_VERSION),
             }},
           install_requires=install_requires,
+          data_files=[('lib/python/.libs_fuse3', [pkg_config('fuse3', ldpath=True) + '/libfuse3.so.3']),],
           )
 
 
-def pkg_config(pkg, cflags=True, ldflags=False, min_ver=None):
+def pkg_config(pkg, cflags=True, ldflags=False, min_ver=None, ldpath=False):
     '''Frontend to ``pkg-config``'''
 
     if min_ver:
@@ -183,6 +185,9 @@ def pkg_config(pkg, cflags=True, ldflags=False, min_ver=None):
                                  % (pkg, version, min_ver))
 
     cmd = ['pkg-config', pkg ]
+    if ldpath:
+        cmd.append('--libs-only-L')
+        cflags = ldflags = False
     if cflags:
         cmd.append('--cflags')
     if ldflags:
@@ -194,8 +199,10 @@ def pkg_config(pkg, cflags=True, ldflags=False, min_ver=None):
     if proc.wait() != 0:
         raise SystemExit() # pkg-config generates error message already
 
-    return cflags.decode('us-ascii').split()
-
+    output = cflags.decode('us-ascii').split()
+    if ldpath:
+        return output[0][2:]
+    return output
 
 class upload_docs(setuptools.Command):
     user_options = []
